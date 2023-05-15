@@ -48,7 +48,7 @@ func TestTxEngineClose(t *testing.T) {
 	config.TxPool.Size = 10
 	_ = config.Oltp.TxTimeoutSeconds.Set("100ms")
 	_ = config.GracePeriods.ShutdownSeconds.Set("0s")
-	te := NewTxEngine(tabletenv.NewEnv(config, "TabletServerTest"))
+	te := NewTxEngine(tabletenv.NewEnv(config, "TabletServerTest"), nil)
 
 	// Normal close.
 	te.AcceptReadWrite()
@@ -58,11 +58,11 @@ func TestTxEngineClose(t *testing.T) {
 
 	// Normal close with timeout wait.
 	te.AcceptReadWrite()
-	c, beginSQL, _, err := te.txPool.Begin(ctx, &querypb.ExecuteOptions{}, false, 0, nil, nil)
+	c, beginSQL, _, err := te.txPool.Begin(ctx, &querypb.ExecuteOptions{}, false, 0, nil, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, "begin", beginSQL)
 	c.Unlock()
-	c, beginSQL, _, err = te.txPool.Begin(ctx, &querypb.ExecuteOptions{}, false, 0, nil, nil)
+	c, beginSQL, _, err = te.txPool.Begin(ctx, &querypb.ExecuteOptions{}, false, 0, nil, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, "begin", beginSQL)
 	c.Unlock()
@@ -74,7 +74,7 @@ func TestTxEngineClose(t *testing.T) {
 
 	// Immediate close.
 	te.AcceptReadOnly()
-	c, _, _, err = te.txPool.Begin(ctx, &querypb.ExecuteOptions{}, false, 0, nil, nil)
+	c, _, _, err = te.txPool.Begin(ctx, &querypb.ExecuteOptions{}, false, 0, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestTxEngineClose(t *testing.T) {
 	// Normal close with short grace period.
 	te.shutdownGracePeriod = 25 * time.Millisecond
 	te.AcceptReadWrite()
-	c, _, _, err = te.txPool.Begin(ctx, &querypb.ExecuteOptions{}, false, 0, nil, nil)
+	c, _, _, err = te.txPool.Begin(ctx, &querypb.ExecuteOptions{}, false, 0, nil, nil, nil)
 	require.NoError(t, err)
 	c.Unlock()
 	start = time.Now()
@@ -97,7 +97,7 @@ func TestTxEngineClose(t *testing.T) {
 	// Normal close with short grace period, but pool gets empty early.
 	te.shutdownGracePeriod = 25 * time.Millisecond
 	te.AcceptReadWrite()
-	c, _, _, err = te.txPool.Begin(ctx, &querypb.ExecuteOptions{}, false, 0, nil, nil)
+	c, _, _, err = te.txPool.Begin(ctx, &querypb.ExecuteOptions{}, false, 0, nil, nil, nil)
 	require.NoError(t, err)
 	c.Unlock()
 	go func() {
@@ -113,7 +113,7 @@ func TestTxEngineClose(t *testing.T) {
 
 	// Immediate close, but connection is in use.
 	te.AcceptReadOnly()
-	c, _, _, err = te.txPool.Begin(ctx, &querypb.ExecuteOptions{}, false, 0, nil, nil)
+	c, _, _, err = te.txPool.Begin(ctx, &querypb.ExecuteOptions{}, false, 0, nil, nil, nil)
 	require.NoError(t, err)
 	go func() {
 		time.Sleep(100 * time.Millisecond)
@@ -149,7 +149,7 @@ func TestTxEngineBegin(t *testing.T) {
 	db.AddQueryPattern(".*", &sqltypes.Result{})
 	config := tabletenv.NewDefaultConfig()
 	config.DB = newDBConfigs(db)
-	te := NewTxEngine(tabletenv.NewEnv(config, "TabletServerTest"))
+	te := NewTxEngine(tabletenv.NewEnv(config, "TabletServerTest"), nil)
 
 	for _, exec := range []func() (int64, string, error){
 		func() (int64, string, error) {
@@ -193,7 +193,7 @@ func TestTxEngineRenewFails(t *testing.T) {
 	db.AddQueryPattern(".*", &sqltypes.Result{})
 	config := tabletenv.NewDefaultConfig()
 	config.DB = newDBConfigs(db)
-	te := NewTxEngine(tabletenv.NewEnv(config, "TabletServerTest"))
+	te := NewTxEngine(tabletenv.NewEnv(config, "TabletServerTest"), nil)
 	te.AcceptReadOnly()
 	options := &querypb.ExecuteOptions{}
 	connID, _, err := te.ReserveBegin(ctx, options, nil, nil)
@@ -531,7 +531,7 @@ func setupTxEngine(db *fakesqldb.DB) *TxEngine {
 	config.TxPool.Size = 10
 	config.Oltp.TxTimeoutSeconds.Set("100ms")
 	_ = config.GracePeriods.ShutdownSeconds.Set("0s")
-	te := NewTxEngine(tabletenv.NewEnv(config, "TabletServerTest"))
+	te := NewTxEngine(tabletenv.NewEnv(config, "TabletServerTest"), nil)
 	return te
 }
 
@@ -561,7 +561,7 @@ func TestTxEngineFailReserve(t *testing.T) {
 	db.AddQueryPattern(".*", &sqltypes.Result{})
 	config := tabletenv.NewDefaultConfig()
 	config.DB = newDBConfigs(db)
-	te := NewTxEngine(tabletenv.NewEnv(config, "TabletServerTest"))
+	te := NewTxEngine(tabletenv.NewEnv(config, "TabletServerTest"), nil)
 
 	options := &querypb.ExecuteOptions{}
 	_, err := te.Reserve(ctx, options, 0, nil)

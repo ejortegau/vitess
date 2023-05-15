@@ -18,10 +18,10 @@ package tabletserver
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
-
 	"vitess.io/vitess/go/pools"
 	"vitess.io/vitess/go/timer"
 	"vitess.io/vitess/go/trace"
@@ -31,9 +31,11 @@ import (
 	"vitess.io/vitess/go/vt/servenv"
 	"vitess.io/vitess/go/vt/sqlparser"
 	"vitess.io/vitess/go/vt/vterrors"
+	"vitess.io/vitess/go/vt/vttablet/tabletserver/planbuilder"
 	"vitess.io/vitess/go/vt/vttablet/tabletserver/tabletenv"
 	"vitess.io/vitess/go/vt/vttablet/tabletserver/tx"
 	"vitess.io/vitess/go/vt/vttablet/tabletserver/txlimiter"
+	"vitess.io/vitess/go/vt/vttablet/tabletserver/txthrottler"
 
 	querypb "vitess.io/vitess/go/vt/proto/query"
 	vtrpcpb "vitess.io/vitess/go/vt/proto/vtrpc"
@@ -73,18 +75,21 @@ type (
 		logMu   sync.Mutex
 		lastLog time.Time
 		txStats *servenv.TimingsWrapper
+
+		txThrottler *txthrottler.TxThrottler
 	}
 )
 
 // NewTxPool creates a new TxPool. It's not operational until it's Open'd.
-func NewTxPool(env tabletenv.Env, limiter txlimiter.TxLimiter) *TxPool {
+func NewTxPool(env tabletenv.Env, limiter txlimiter.TxLimiter, txThrottler *txthrottler.TxThrottler) *TxPool {
 	config := env.Config()
 	axp := &TxPool{
-		env:     env,
-		scp:     NewStatefulConnPool(env),
-		ticks:   timer.NewTimer(txKillerTimeoutInterval(config)),
-		limiter: limiter,
-		txStats: env.Exporter().NewTimings("Transactions", "Transaction stats", "operation"),
+		env:         env,
+		scp:         NewStatefulConnPool(env),
+		ticks:       timer.NewTimer(txKillerTimeoutInterval(config)),
+		limiter:     limiter,
+		txStats:     env.Exporter().NewTimings("Transactions", "Transaction stats", "operation"),
+		txThrottler: txThrottler,
 	}
 	// Careful: conns also exports name+"xxx" vars,
 	// but we know it doesn't export Timeout.
@@ -226,13 +231,43 @@ func (tp *TxPool) Rollback(ctx context.Context, txConn *StatefulConnection) erro
 	return nil
 }
 
+func (tp *TxPool) getPriorityFromOptions(options *querypb.ExecuteOptions) int {
+	priority := tp.env.Config().TxThrottlerDefaultPriority
+	if options != nil && options.Priority != "" {
+		optionsPriority, err := strconv.Atoi(options.Priority)
+		// This should never error out, as the value for Priority has been validated in the vtgate already.
+		// Still, handle it just to make sure.
+		if err != nil {
+			log.Errorf(
+				"The value of the %s query directive could not be converted to integer, using the "+
+					"default value. Error was: %s",
+				sqlparser.DirectivePriority, priority, err)
+		} else {
+			priority = optionsPriority
+		}
+	}
+	return priority
+}
+
 // Begin begins a transaction, and returns the associated connection and
 // the statements (if any) executed to initiate the transaction. In autocommit
 // mode the statement will be "".
 // The connection returned is locked for the callee and its responsibility is to unlock the connection.
-func (tp *TxPool) Begin(ctx context.Context, options *querypb.ExecuteOptions, readOnly bool, reservedID int64, savepointQueries []string, setting *pools.Setting) (*StatefulConnection, string, string, error) {
+func (tp *TxPool) Begin(ctx context.Context, options *querypb.ExecuteOptions, readOnly bool, reservedID int64, savepointQueries []string, setting *pools.Setting, planType *planbuilder.PlanType) (*StatefulConnection, string, string, error) {
 	span, ctx := trace.NewSpan(ctx, "TxPool.Begin")
 	defer span.Finish()
+
+	optionReadOnly := false
+	for _, accessMode := range options.GetTransactionAccessMode() {
+		if accessMode == querypb.ExecuteOptions_READ_ONLY {
+			optionReadOnly = true
+			break
+		}
+	}
+
+	if !optionReadOnly && tp.txThrottler.Throttle(tp.getPriorityFromOptions(options), planType) {
+		return nil, "", "", vterrors.Errorf(vtrpcpb.Code_RESOURCE_EXHAUSTED, "Transaction throttled")
+	}
 
 	var conn *StatefulConnection
 	var err error

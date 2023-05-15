@@ -152,7 +152,7 @@ func NewTxThrottler(env tabletenv.Env, topoServer *topo.Server) *TxThrottler {
 		log.Errorf("Error creating transaction throttler. Transaction throttling will"+
 			" be disabled. Error: %v", err)
 		// newTxThrottler with disabled config never returns an error
-		txThrottler, _ = newTxThrottler(env, &txThrottlerConfig{enabled: false, autoCommit: env.Config().TxThrottlerAutoCommit})
+		txThrottler, _ = newTxThrottler(env, &txThrottlerConfig{enabled: false})
 	} else {
 		log.Infof("Initialized transaction throttler with config: %+v", txThrottler.config)
 	}
@@ -181,7 +181,6 @@ func tryCreateTxThrottler(env tabletenv.Env, topoServer *topo.Server) (*TxThrott
 
 	return newTxThrottler(env, &txThrottlerConfig{
 		enabled:          true,
-		autoCommit:       env.Config().TxThrottlerAutoCommit,
 		topoServer:       topoServer,
 		throttlerConfig:  &throttlerConfig,
 		healthCheckCells: healthCheckCells,
@@ -277,25 +276,21 @@ func (t *TxThrottler) Throttle(priority int, planType *planbuilder.PlanType) (re
 		return false
 	}
 
-	// This blocks handles deciding whether to apply the throttle or not. In
-	// summary, it will apply the throttling logic in any of these cases:
-	// - The plan type is nil (as during TabletServer.begin()) AND throttling auto-commit statements is disabled;
-	// - The plan type is for a write (INSERT/UPDATE/DELETE/LOAD) AND throttling auto-commit statements is enabled;
-	applyThrottling := false
-	if planType == nil && !t.config.autoCommit {
-		applyThrottling = true
-	}
-	if planType != nil && t.config.autoCommit {
-		switch *planType {
-		case planbuilder.PlanInsert, planbuilder.PlanInsertMessage, planbuilder.PlanUpdate, planbuilder.PlanUpdateLimit, planbuilder.PlanDeleteLimit, planbuilder.PlanDelete, planbuilder.PlanLoad:
-			applyThrottling = true
-			break
-		default:
-			applyThrottling = false
-		}
-	}
+	var applyThrottling bool
+	// If we know the plan, only throttle writes, as the TxThrottler currently only watches replication lag
+	//if planType != nil {
+	//	switch *planType {
+	//	case planbuilder.PlanInsert, planbuilder.PlanInsertMessage, planbuilder.PlanUpdate, planbuilder.PlanUpdateLimit, planbuilder.PlanDeleteLimit, planbuilder.PlanDelete, planbuilder.PlanLoad:
+	//		applyThrottling = true
+	//	default:
+	//		applyThrottling = true
+	//	}
+	//} else {
+	//	// planType is nil when the query is in an explicit Tx (BEGIN; <query>; COMMIT;)
+	//	applyThrottling = true
+	//}
 
-	// Throttle according to both what the throttler state state says, the priority. Workloads with lower priority value
+	// Throttle according to both what the throttler state says, the priority. Workloads with lower priority value
 	// are less likely to be throttled.
 	if applyThrottling {
 		result = t.state.throttle() && rand.Intn(sqlparser.MaxPriorityValue) < priority

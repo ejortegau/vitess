@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"vitess.io/vitess/go/vt/vttablet/tabletserver/txthrottler"
 
 	"vitess.io/vitess/go/pools"
 	"vitess.io/vitess/go/timer"
@@ -93,7 +94,7 @@ type TxEngine struct {
 }
 
 // NewTxEngine creates a new TxEngine.
-func NewTxEngine(env tabletenv.Env) *TxEngine {
+func NewTxEngine(env tabletenv.Env, txThrottler *txthrottler.TxThrottler) *TxEngine {
 	config := env.Config()
 	te := &TxEngine{
 		env:                 env,
@@ -101,7 +102,7 @@ func NewTxEngine(env tabletenv.Env) *TxEngine {
 		reservedConnStats:   env.Exporter().NewTimings("ReservedConnections", "Reserved connections stats", "operation"),
 	}
 	limiter := txlimiter.New(env)
-	te.txPool = NewTxPool(env, limiter)
+	te.txPool = NewTxPool(env, limiter, txThrottler)
 	te.twopcEnabled = config.TwoPCEnable
 	if te.twopcEnabled {
 		if config.TwoPCCoordinatorAddress == "" {
@@ -237,7 +238,7 @@ func (te *TxEngine) Begin(ctx context.Context, savepointQueries []string, reserv
 	}
 
 	defer te.beginRequests.Done()
-	conn, beginSQL, sessionStateChanges, err := te.txPool.Begin(ctx, options, te.state == AcceptingReadOnly, reservedID, savepointQueries, setting)
+	conn, beginSQL, sessionStateChanges, err := te.txPool.Begin(ctx, options, te.state == AcceptingReadOnly, reservedID, savepointQueries, setting, nil)
 	if err != nil {
 		return 0, "", "", err
 	}
@@ -394,7 +395,7 @@ outer:
 		if txid > maxid {
 			maxid = txid
 		}
-		conn, _, _, err := te.txPool.Begin(ctx, &querypb.ExecuteOptions{}, false, 0, nil, nil)
+		conn, _, _, err := te.txPool.Begin(ctx, &querypb.ExecuteOptions{}, false, 0, nil, nil, nil)
 		if err != nil {
 			allErr.RecordError(err)
 			continue

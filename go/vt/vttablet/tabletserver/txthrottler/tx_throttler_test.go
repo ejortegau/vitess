@@ -44,13 +44,13 @@ func TestDisabledThrottler(t *testing.T) {
 	config := tabletenv.NewDefaultConfig()
 	config.EnableTxThrottler = false
 	env := tabletenv.NewEnv(config, t.Name())
-	throttler := NewTxThrottler(env, nil)
+	throttler := NewTxThrottler(env, nil, 100)
 	throttler.InitDBConfig(&querypb.Target{
 		Keyspace: "keyspace",
 		Shard:    "shard",
 	})
 	assert.Nil(t, throttler.Open())
-	assert.False(t, throttler.Throttle(0, nil))
+	assert.False(t, throttler.Throttle(0, planbuilder.PlanInsert))
 	assert.Zero(t, throttler.throttlerRunning.Get())
 	throttler.Close()
 }
@@ -127,7 +127,7 @@ func TestEnabledThrottler(t *testing.T) {
 	assert.Nil(t, throttler.Open())
 	assert.Equal(t, int64(1), throttler.throttlerRunning.Get())
 
-	assert.False(t, throttler.Throttle(100, nil))
+	assert.False(t, throttler.Throttle(100, planbuilder.PlanInsert))
 	assert.Equal(t, int64(1), throttler.requestsTotal.Get())
 	assert.Zero(t, throttler.requestsThrottled.Get())
 
@@ -140,25 +140,23 @@ func TestEnabledThrottler(t *testing.T) {
 	// This call should not be forwarded to the go/vt/throttler.Throttler object.
 	throttler.state.StatsUpdate(rdonlyTabletStats)
 	// The second throttle call should reject.
-	assert.True(t, throttler.Throttle(100, nil))
+	assert.True(t, throttler.Throttle(100, planbuilder.PlanInsert))
 	assert.Equal(t, int64(2), throttler.requestsTotal.Get())
 	assert.Equal(t, int64(1), throttler.requestsThrottled.Get())
 
 	// This call should not throttle due to priority. Check that's the case and counters agree.
-	assert.False(t, throttler.Throttle(0, nil))
+	assert.False(t, throttler.Throttle(0, planbuilder.PlanInsert))
 	assert.Equal(t, int64(3), throttler.requestsTotal.Get())
 	assert.Equal(t, int64(1), throttler.requestsThrottled.Get())
 
 	// This call should throttle due to the plan
 	throttler.config.autoCommit = true
-	planInsert := planbuilder.PlanInsert
-	assert.True(t, throttler.Throttle(100, &planInsert))
+	assert.True(t, throttler.Throttle(100, planbuilder.PlanInsert))
 	assert.Equal(t, int64(4), throttler.requestsTotal.Get())
 	assert.Equal(t, int64(2), throttler.requestsThrottled.Get())
 
 	// This call should not throttle due to the plan
-	planSet := planbuilder.PlanSet
-	assert.False(t, throttler.Throttle(100, &planSet))
+	assert.False(t, throttler.Throttle(100, planbuilder.PlanSet))
 	assert.Equal(t, int64(5), throttler.requestsTotal.Get())
 	assert.Equal(t, int64(2), throttler.requestsThrottled.Get())
 
