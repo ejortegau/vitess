@@ -317,6 +317,15 @@ func (client *gRPCVtctldClient) ForceCutOverSchemaMigration(ctx context.Context,
 	return client.c.ForceCutOverSchemaMigration(ctx, in, opts...)
 }
 
+// ForceDrainTablet is part of the vtctlservicepb.VtctldClient interface.
+func (client *gRPCVtctldClient) ForceDrainTablet(ctx context.Context, in *vtctldatapb.ForceDrainTabletRequest, opts ...grpc.CallOption) (*vtctldatapb.ForceDrainTabletResponse, error) {
+	if client.c == nil {
+		return nil, status.Error(codes.Unavailable, connClosedMsg)
+	}
+
+	return client.c.ForceDrainTablet(ctx, in, opts...)
+}
+
 // GetBackups is part of the vtctlservicepb.VtctldClient interface.
 func (client *gRPCVtctldClient) GetBackups(ctx context.Context, in *vtctldatapb.GetBackupsRequest, opts ...grpc.CallOption) (*vtctldatapb.GetBackupsResponse, error) {
 	if client.c == nil {

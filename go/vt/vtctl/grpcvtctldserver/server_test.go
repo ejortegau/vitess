@@ -2017,6 +2017,189 @@ func TestChangeTabletType(t *testing.T) {
 	})
 }
 
+func TestForceDrainTablet(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		cells     []string
+		tablets   []*topodatapb.Tablet
+		req       *vtctldatapb.ForceDrainTabletRequest
+		expected  *vtctldatapb.ForceDrainTabletResponse
+		shouldErr bool
+	}{
+		{
+			name:  "replica to drained",
+			cells: []string{"zone1"},
+			tablets: []*topodatapb.Tablet{
+				{
+					Alias: &topodatapb.TabletAlias{
+						Cell: "zone1",
+						Uid:  100,
+					},
+					Keyspace: "ks",
+					Shard:    "0",
+					Type:     topodatapb.TabletType_REPLICA,
+				},
+			},
+			req: &vtctldatapb.ForceDrainTabletRequest{
+				TabletAlias: &topodatapb.TabletAlias{
+					Cell: "zone1",
+					Uid:  100,
+				},
+			},
+			expected: &vtctldatapb.ForceDrainTabletResponse{
+				BeforeTablet: &topodatapb.Tablet{
+					Alias: &topodatapb.TabletAlias{
+						Cell: "zone1",
+						Uid:  100,
+					},
+					Keyspace: "ks",
+					Shard:    "0",
+					Type:     topodatapb.TabletType_REPLICA,
+				},
+				AfterTablet: &topodatapb.Tablet{
+					Alias: &topodatapb.TabletAlias{
+						Cell: "zone1",
+						Uid:  100,
+					},
+					Keyspace: "ks",
+					Shard:    "0",
+					Type:     topodatapb.TabletType_DRAINED,
+				},
+			},
+			shouldErr: false,
+		},
+		{
+			name:  "rdonly to drained",
+			cells: []string{"zone1"},
+			tablets: []*topodatapb.Tablet{
+				{
+					Alias: &topodatapb.TabletAlias{
+						Cell: "zone1",
+						Uid:  100,
+					},
+					Keyspace: "ks",
+					Shard:    "0",
+					Type:     topodatapb.TabletType_RDONLY,
+				},
+			},
+			req: &vtctldatapb.ForceDrainTabletRequest{
+				TabletAlias: &topodatapb.TabletAlias{
+					Cell: "zone1",
+					Uid:  100,
+				},
+			},
+			expected: &vtctldatapb.ForceDrainTabletResponse{
+				BeforeTablet: &topodatapb.Tablet{
+					Alias: &topodatapb.TabletAlias{
+						Cell: "zone1",
+						Uid:  100,
+					},
+					Keyspace: "ks",
+					Shard:    "0",
+					Type:     topodatapb.TabletType_RDONLY,
+				},
+				AfterTablet: &topodatapb.Tablet{
+					Alias: &topodatapb.TabletAlias{
+						Cell: "zone1",
+						Uid:  100,
+					},
+					Keyspace: "ks",
+					Shard:    "0",
+					Type:     topodatapb.TabletType_DRAINED,
+				},
+			},
+			shouldErr: false,
+		},
+		{
+			name:  "primary not allowed",
+			cells: []string{"zone1"},
+			tablets: []*topodatapb.Tablet{
+				{
+					Alias: &topodatapb.TabletAlias{
+						Cell: "zone1",
+						Uid:  100,
+					},
+					Keyspace: "ks",
+					Shard:    "0",
+					Type:     topodatapb.TabletType_PRIMARY,
+				},
+			},
+			req: &vtctldatapb.ForceDrainTabletRequest{
+				TabletAlias: &topodatapb.TabletAlias{
+					Cell: "zone1",
+					Uid:  100,
+				},
+			},
+			shouldErr: true,
+		},
+		{
+			name:  "already drained",
+			cells: []string{"zone1"},
+			tablets: []*topodatapb.Tablet{
+				{
+					Alias: &topodatapb.TabletAlias{
+						Cell: "zone1",
+						Uid:  100,
+					},
+					Keyspace: "ks",
+					Shard:    "0",
+					Type:     topodatapb.TabletType_DRAINED,
+				},
+			},
+			req: &vtctldatapb.ForceDrainTabletRequest{
+				TabletAlias: &topodatapb.TabletAlias{
+					Cell: "zone1",
+					Uid:  100,
+				},
+			},
+			shouldErr: true,
+		},
+		{
+			name:    "tablet not found",
+			cells:   []string{"zone1"},
+			tablets: []*topodatapb.Tablet{},
+			req: &vtctldatapb.ForceDrainTabletRequest{
+				TabletAlias: &topodatapb.TabletAlias{
+					Cell: "zone1",
+					Uid:  100,
+				},
+			},
+			shouldErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			ts := memorytopo.NewServer(ctx, tt.cells...)
+			vtctld := testutil.NewVtctldServerWithTabletManagerClient(t, ts, &testutil.TabletManagerClient{
+				TopoServer: ts,
+			}, func(ts *topo.Server) vtctlservicepb.VtctldServer {
+				return NewVtctldServer(vtenv.NewTestEnv(), ts)
+			})
+
+			testutil.AddTablets(ctx, t, ts, nil, tt.tablets...)
+
+			resp, err := vtctld.ForceDrainTablet(ctx, tt.req)
+			if tt.shouldErr {
+				assert.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			utils.MustMatch(t, tt.expected, resp)
+
+			tablet, err := ts.GetTablet(ctx, tt.req.TabletAlias)
+			require.NoError(t, err)
+			assert.Equal(t, topodatapb.TabletType_DRAINED, tablet.Type)
+		})
+	}
+}
+
 func TestCleanupSchemaMigration(t *testing.T) {
 	t.Parallel()
 

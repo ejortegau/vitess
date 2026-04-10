@@ -57,6 +57,19 @@ NOTE: This command automatically updates the serving graph.`,
 		Args:                  cobra.ExactArgs(2),
 		RunE:                  commandChangeTabletType,
 	}
+	// ForceDrainTablet makes a ForceDrainTablet gRPC call to a vtctld.
+	ForceDrainTablet = &cobra.Command{
+		Use:   "ForceDrainTablet <alias>",
+		Short: "Forces a non-primary tablet's type to DRAINED directly in the topo.",
+		Long: `Forces a non-primary tablet's type to DRAINED directly in the topo,
+without requiring the tablet to be reachable.
+
+This is useful when a tablet is sick enough that it cannot respond to RPCs,
+but you need to remove it from the serving path.`,
+		DisableFlagsInUseLine: true,
+		Args:                  cobra.ExactArgs(1),
+		RunE:                  commandForceDrainTablet,
+	}
 	// DeleteTablets makes a DeleteTablets gRPC call to a vtctld.
 	DeleteTablets = &cobra.Command{
 		Use:                   "DeleteTablets <alias> [ <alias> ... ]",
@@ -280,6 +293,29 @@ func commandChangeTabletType(cmd *cobra.Command, args []string) error {
 
 	if resp.WasDryRun {
 		fmt.Println("--- DRY RUN ---")
+	}
+
+	fmt.Printf("- %v\n", cli.MarshalTabletAWK(resp.BeforeTablet))
+	fmt.Printf("+ %v\n", cli.MarshalTabletAWK(resp.AfterTablet))
+
+	return nil
+}
+
+func commandForceDrainTablet(cmd *cobra.Command, args []string) error {
+	aliasStr := cmd.Flags().Arg(0)
+
+	alias, err := topoproto.ParseTabletAlias(aliasStr)
+	if err != nil {
+		return err
+	}
+
+	cli.FinishedParsing(cmd)
+
+	resp, err := client.ForceDrainTablet(commandCtx, &vtctldatapb.ForceDrainTabletRequest{
+		TabletAlias: alias,
+	})
+	if err != nil {
+		return err
 	}
 
 	fmt.Printf("- %v\n", cli.MarshalTabletAWK(resp.BeforeTablet))
@@ -650,6 +686,8 @@ func init() {
 
 	DeleteTablets.Flags().BoolVarP(&deleteTabletsOptions.AllowPrimary, "allow-primary", "p", false, "Allow the primary tablet of a shard to be deleted. Use with caution.")
 	Root.AddCommand(DeleteTablets)
+
+	Root.AddCommand(ForceDrainTablet)
 
 	Root.AddCommand(ExecuteHook)
 	Root.AddCommand(GetFullStatus)

@@ -117,6 +117,9 @@ service Vtctld {
   rpc FindAllShardsInKeyspace(vtctldata.FindAllShardsInKeyspaceRequest) returns (vtctldata.FindAllShardsInKeyspaceResponse) {};
   // ForceCutOverSchemaMigration marks a schema migration for forced cut-over.
   rpc ForceCutOverSchemaMigration(vtctldata.ForceCutOverSchemaMigrationRequest) returns (vtctldata.ForceCutOverSchemaMigrationResponse) {};
+  // ForceDrainTablet forces a non-primary tablet's type to DRAINED directly
+  // in the topo, without requiring the tablet to be reachable.
+  rpc ForceDrainTablet(vtctldata.ForceDrainTabletRequest) returns (vtctldata.ForceDrainTabletResponse) {};
   // GetBackups returns all the backups for a shard.
   rpc GetBackups(vtctldata.GetBackupsRequest) returns (vtctldata.GetBackupsResponse) {};
   // GetCellInfo returns the information for a cell.

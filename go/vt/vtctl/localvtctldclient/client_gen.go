@@ -281,6 +281,11 @@ func (client *localVtctldClient) ForceCutOverSchemaMigration(ctx context.Context
 	return client.s.ForceCutOverSchemaMigration(ctx, in)
 }
 
+// ForceDrainTablet is part of the vtctlservicepb.VtctldClient interface.
+func (client *localVtctldClient) ForceDrainTablet(ctx context.Context, in *vtctldatapb.ForceDrainTabletRequest, opts ...grpc.CallOption) (*vtctldatapb.ForceDrainTabletResponse, error) {
+	return client.s.ForceDrainTablet(ctx, in)
+}
+
 // GetBackups is part of the vtctlservicepb.VtctldClient interface.
 func (client *localVtctldClient) GetBackups(ctx context.Context, in *vtctldatapb.GetBackupsRequest, opts ...grpc.CallOption) (*vtctldatapb.GetBackupsResponse, error) {
 	return client.s.GetBackups(ctx, in)

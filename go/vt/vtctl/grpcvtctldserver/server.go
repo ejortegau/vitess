@@ -859,6 +859,47 @@ func (s *VtctldServer) ForceCutOverSchemaMigration(ctx context.Context, req *vtc
 	return resp, nil
 }
 
+// ForceDrainTablet is part of the vtctlservicepb.VtctldServer interface.
+func (s *VtctldServer) ForceDrainTablet(ctx context.Context, req *vtctldatapb.ForceDrainTabletRequest) (resp *vtctldatapb.ForceDrainTabletResponse, err error) {
+	span, ctx := trace.NewSpan(ctx, "VtctldServer.ForceDrainTablet")
+	defer span.Finish()
+
+	defer panicHandler(&err)
+
+	span.Annotate("tablet_alias", topoproto.TabletAliasString(req.TabletAlias))
+
+	ctx, cancel := context.WithTimeout(ctx, topo.RemoteOperationTimeout)
+	defer cancel()
+
+	tablet, err := s.ts.GetTablet(ctx, req.TabletAlias)
+	if err != nil {
+		return nil, err
+	}
+
+	if tablet.Type == topodatapb.TabletType_PRIMARY {
+		return nil, vterrors.Errorf(vtrpcpb.Code_FAILED_PRECONDITION, "cannot force drain a PRIMARY tablet %v; use PlannedReparentShard or EmergencyReparentShard first", topoproto.TabletAliasString(req.TabletAlias))
+	}
+
+	if tablet.Type == topodatapb.TabletType_DRAINED {
+		return nil, vterrors.Errorf(vtrpcpb.Code_FAILED_PRECONDITION, "tablet %v is already DRAINED", topoproto.TabletAliasString(req.TabletAlias))
+	}
+
+	beforeTablet := tablet.CloneVT()
+
+	updatedTablet, err := s.ts.UpdateTabletFields(ctx, req.TabletAlias, func(t *topodatapb.Tablet) error {
+		t.Type = topodatapb.TabletType_DRAINED
+		return nil
+	})
+	if err != nil {
+		return nil, vterrors.Wrapf(err, "failed to update tablet %v type to DRAINED in topo", topoproto.TabletAliasString(req.TabletAlias))
+	}
+
+	return &vtctldatapb.ForceDrainTabletResponse{
+		BeforeTablet: beforeTablet,
+		AfterTablet:  updatedTablet,
+	}, nil
+}
+
 // CompleteSchemaMigration is part of the vtctlservicepb.VtctldServer interface.
 func (s *VtctldServer) CompleteSchemaMigration(ctx context.Context, req *vtctldatapb.CompleteSchemaMigrationRequest) (resp *vtctldatapb.CompleteSchemaMigrationResponse, err error) {
 	span, ctx := trace.NewSpan(ctx, "VtctldServer.CompleteSchemaMigration")

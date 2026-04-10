@@ -863,6 +863,15 @@ message ForceCutOverSchemaMigrationResponse {
   map<string, uint64> rows_affected_by_shard = 1;
 }
 
+message ForceDrainTabletRequest {
+  topodata.TabletAlias tablet_alias = 1;
+}
+
+message ForceDrainTabletResponse {
+  topodata.Tablet before_tablet = 1;
+  topodata.Tablet after_tablet = 2;
+}
+
 message GetBackupsRequest {
   string keyspace = 1;
   string shard = 2;

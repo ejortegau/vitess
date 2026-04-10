@@ -222,6 +222,9 @@ type VtctldClient interface {
 	FindAllShardsInKeyspace(ctx context.Context, in *vtctldata.FindAllShardsInKeyspaceRequest, opts ...grpc.CallOption) (*vtctldata.FindAllShardsInKeyspaceResponse, error)
 	// ForceCutOverSchemaMigration marks a schema migration for forced cut-over.
 	ForceCutOverSchemaMigration(ctx context.Context, in *vtctldata.ForceCutOverSchemaMigrationRequest, opts ...grpc.CallOption) (*vtctldata.ForceCutOverSchemaMigrationResponse, error)
+	// ForceDrainTablet forces a non-primary tablet's type to DRAINED directly
+	// in the topo, without requiring the tablet to be reachable.
+	ForceDrainTablet(ctx context.Context, in *vtctldata.ForceDrainTabletRequest, opts ...grpc.CallOption) (*vtctldata.ForceDrainTabletResponse, error)
 	// GetBackups returns all the backups for a shard.
 	GetBackups(ctx context.Context, in *vtctldata.GetBackupsRequest, opts ...grpc.CallOption) (*vtctldata.GetBackupsResponse, error)
 	// GetCellInfo returns the information for a cell.
@@ -823,6 +826,15 @@ func (c *vtctldClient) FindAllShardsInKeyspace(ctx context.Context, in *vtctldat
 func (c *vtctldClient) ForceCutOverSchemaMigration(ctx context.Context, in *vtctldata.ForceCutOverSchemaMigrationRequest, opts ...grpc.CallOption) (*vtctldata.ForceCutOverSchemaMigrationResponse, error) {
 	out := new(vtctldata.ForceCutOverSchemaMigrationResponse)
 	err := c.cc.Invoke(ctx, "/vtctlservice.Vtctld/ForceCutOverSchemaMigration", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *vtctldClient) ForceDrainTablet(ctx context.Context, in *vtctldata.ForceDrainTabletRequest, opts ...grpc.CallOption) (*vtctldata.ForceDrainTabletResponse, error) {
+	out := new(vtctldata.ForceDrainTabletResponse)
+	err := c.cc.Invoke(ctx, "/vtctlservice.Vtctld/ForceDrainTablet", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1815,6 +1827,9 @@ type VtctldServer interface {
 	FindAllShardsInKeyspace(context.Context, *vtctldata.FindAllShardsInKeyspaceRequest) (*vtctldata.FindAllShardsInKeyspaceResponse, error)
 	// ForceCutOverSchemaMigration marks a schema migration for forced cut-over.
 	ForceCutOverSchemaMigration(context.Context, *vtctldata.ForceCutOverSchemaMigrationRequest) (*vtctldata.ForceCutOverSchemaMigrationResponse, error)
+	// ForceDrainTablet forces a non-primary tablet's type to DRAINED directly
+	// in the topo, without requiring the tablet to be reachable.
+	ForceDrainTablet(context.Context, *vtctldata.ForceDrainTabletRequest) (*vtctldata.ForceDrainTabletResponse, error)
 	// GetBackups returns all the backups for a shard.
 	GetBackups(context.Context, *vtctldata.GetBackupsRequest) (*vtctldata.GetBackupsResponse, error)
 	// GetCellInfo returns the information for a cell.
@@ -2180,6 +2195,9 @@ func (UnimplementedVtctldServer) FindAllShardsInKeyspace(context.Context, *vtctl
 }
 func (UnimplementedVtctldServer) ForceCutOverSchemaMigration(context.Context, *vtctldata.ForceCutOverSchemaMigrationRequest) (*vtctldata.ForceCutOverSchemaMigrationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ForceCutOverSchemaMigration not implemented")
+}
+func (UnimplementedVtctldServer) ForceDrainTablet(context.Context, *vtctldata.ForceDrainTabletRequest) (*vtctldata.ForceDrainTabletResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ForceDrainTablet not implemented")
 }
 func (UnimplementedVtctldServer) GetBackups(context.Context, *vtctldata.GetBackupsRequest) (*vtctldata.GetBackupsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetBackups not implemented")
@@ -3063,6 +3081,24 @@ func _Vtctld_ForceCutOverSchemaMigration_Handler(srv interface{}, ctx context.Co
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(VtctldServer).ForceCutOverSchemaMigration(ctx, req.(*vtctldata.ForceCutOverSchemaMigrationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Vtctld_ForceDrainTablet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(vtctldata.ForceDrainTabletRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VtctldServer).ForceDrainTablet(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/vtctlservice.Vtctld/ForceDrainTablet",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VtctldServer).ForceDrainTablet(ctx, req.(*vtctldata.ForceDrainTabletRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -4942,6 +4978,10 @@ var Vtctld_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ForceCutOverSchemaMigration",
 			Handler:    _Vtctld_ForceCutOverSchemaMigration_Handler,
+		},
+		{
+			MethodName: "ForceDrainTablet",
+			Handler:    _Vtctld_ForceDrainTablet_Handler,
 		},
 		{
 			MethodName: "GetBackups",
